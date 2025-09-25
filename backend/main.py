@@ -241,6 +241,9 @@ async def get_ports(
                 ports_info.sort(key=lambda x: str(x.get(sort_field, "")) if x.get(sort_field) is not None else "",
                                reverse=(sort_direction == "desc"))
         
+        # 计算总的活跃端口数（状态为LISTEN或ESTABLISHED的端口）
+        active_count = len([port for port in ports_info if port['status'] in ['LISTEN', 'ESTABLISHED']])
+        
         # 分页
         total_count = len(ports_info)
         start_index = (page - 1) * page_size
@@ -251,6 +254,7 @@ async def get_ports(
         return {
             "data": paginated_ports,
             "total": total_count,
+            "active_count": active_count,
             "page": page,
             "page_size": page_size,
             "total_pages": (total_count + page_size - 1) // page_size

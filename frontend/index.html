@@ -869,8 +869,8 @@
                 // 更新统计数字
                 document.getElementById('total-ports').textContent = totalCount;
 
-                // 使用当前获取的端口数据来计算活跃端口数量
-                const activePorts = portsData.filter(port => 
+                // 从API返回的结果中获取总活跃端口数，如果没有则使用当前页数据计算
+                const activePorts = result.active_count || portsData.filter(port => 
                     port.status === 'LISTEN' || port.status === 'ESTABLISHED'
                 ).length;
 
