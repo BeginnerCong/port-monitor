@@ -1,0 +1,39 @@
+# 依赖项
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*\~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# Docker相关
+.docker/
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+# Python虚拟环境激活脚本
+activate
+
+
+# 后端运行时文件
+backend/*.pid
+backend/*.log
+
+# Shell脚本执行时的缓存
+*.sh~

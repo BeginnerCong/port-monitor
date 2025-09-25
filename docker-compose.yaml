@@ -1,0 +1,18 @@
+services:
+  port-monitor:
+    build:
+      context: ./
+      dockerfile: ./devops/Dockerfile
+    image: port-monitor-backend:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - /proc:/host/proc:ro   # 挂载 /proc 目录以获取进程信息
+    privileged: true          # 需要特权模式才能正确获取端口和进程信息
+    restart: always
+    networks:
+      - port-monitor-network
+
+networks:
+  port-monitor-network:
+    driver: bridge

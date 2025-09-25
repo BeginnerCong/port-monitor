@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linux服务器端口监控</title>
+    <script src="js/tailwind.min.js"></script>
+    <link href="css/font-awesome.min.css" rel="stylesheet">
+    <script src="js/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        success: '#00B42A',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        dark: '#1D2129',
+                        'gray-light': '#F2F3F5',
+                        'gray-medium': '#C9CDD4',
+                        // 暗色主题
+                        'dark-bg': '#0F1419',
+                        'dark-surface': '#1E2328',
+                        'dark-border': '#2F3349',
+                        'dark-text': '#C9CDD4',
+                        'dark-text-secondary': '#86909C',
+                        // 护眼绿主题
+                        'green-primary': '#28a745',
+                        'green-bg': '#f0f8f0',
+                        'green-surface': '#ffffff',
+                        'green-border': '#c3e6c3',
+                        'green-text': '#2d5a2d',
+                        'green-text-secondary': '#5a7a5a',
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .scrollbar-hide {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+            .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+            }
+            .animate-pulse-slow {
+                animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }
+            .theme-transition {
+                transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+            }
+        }
+        
+        /* 护眼绿主题样式 */
+        .green {
+            --tw-bg-opacity: 1;
+            background-color: rgb(240 248 240 / var(--tw-bg-opacity));
+            --tw-text-opacity: 1;
+            color: rgb(45 90 45 / var(--tw-text-opacity));
+        }
+        
+        .green .bg-white { background-color: #ffffff !important; }
+        .green .bg-gray-50 { background-color: #f0f8f0 !important; }
+        .green .bg-gray-light { background-color: #e8f5e8 !important; }
+        .green .bg-primary { background-color: #28a745 !important; }
+        .green .text-primary { color: #28a745 !important; }
+        .green .text-dark { color: #2d5a2d !important; }
+        .green .text-gray-600 { color: #5a7a5a !important; }
+        .green .text-gray-500 { color: #5a7a5a !important; }
+        .green .border-gray-light { border-color: #c3e6c3 !important; }
+        .green .border-gray-medium { border-color: #a8d8a8 !important; }
+        .green .hover\:bg-gray-100:hover { background-color: #e8f5e8 !important; }
+        .green .hover\:bg-gray-200:hover { background-color: #d4f0d4 !important; }
+        
+        /* 修复图表筛选按钮在所有主题下的显示 */
+        .chart-filter-btn {
+            transition: all 0.3s ease;
+            background-color: #F2F3F5; /* 默认非激活状态 */
+            color: #666666;
+        }
+        
+        .chart-filter-btn.active {
+            background-color: #165DFF !important; /* 亮色主题激活状态 */
+            color: white !important;
+        }
+        
+        .green .chart-filter-btn.active {
+            background-color: #28a745 !important; /* 护眼绿主题激活状态 */
+            color: white !important;
+        }
+        
+        .dark .chart-filter-btn:not(.active) {
+            background-color: #2F3349 !important; /* 暗色主题非激活状态 */
+            color: #86909C !important;
+        }
+        
+        .green .chart-filter-btn:not(.active) {
+            background-color: #c3e6c3 !important; /* 护眼绿主题非激活状态 */
+            color: #5a7a5a !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-dark-bg green:bg-green-bg font-inter text-dark dark:text-dark-text green:text-green-text theme-transition">
+    <!-- 顶部导航栏 -->
+    <header class="bg-white dark:bg-dark-surface green:bg-green-surface shadow-sm fixed w-full top-0 z-50 transition-all duration-300 theme-transition" id="navbar">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-server text-primary green:text-green-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-dark dark:text-dark-text green:text-green-text">端口监控中心</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <!-- 主题切换按钮 -->
+                <div class="relative">
+                    <button id="theme-toggle" class="p-2 rounded-full bg-gray-100 dark:bg-dark-border green:bg-green-border hover:bg-gray-200 dark:hover:bg-gray-600 green:hover:bg-green-text-secondary/20 transition-all duration-300 theme-transition" title="切换主题">
+                        <i id="theme-icon" class="fa fa-sun-o text-gray-600 dark:text-dark-text green:text-green-text transition-colors"></i>
+                    </button>
+                    <!-- 主题下拉菜单 -->
+                    <div id="theme-dropdown" class="absolute right-0 mt-2 w-40 bg-white dark:bg-dark-surface green:bg-green-surface rounded-lg shadow-lg z-10 hidden border border-gray-medium dark:border-dark-border green:border-green-border theme-transition">
+                        <div class="py-1">
+                            <button class="theme-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border green:hover:bg-green-bg transition-colors text-dark dark:text-dark-text green:text-green-text theme-transition" data-theme="light">
+                                <i class="fa fa-sun-o mr-2"></i>浅色
+                            </button>
+                            <button class="theme-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border green:hover:bg-green-bg transition-colors text-dark dark:text-dark-text green:text-green-text theme-transition" data-theme="dark">
+                                <i class="fa fa-moon-o mr-2"></i>深色
+                            </button>
+                            <button class="theme-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border green:hover:bg-green-bg transition-colors text-dark dark:text-dark-text green:text-green-text theme-transition" data-theme="green">
+                                <i class="fa fa-leaf mr-2"></i>护眼绿
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 刷新间隔设置 -->
+                <!-- <div class="hidden md:flex items-center space-x-2">
+                    <span class="text-sm text-gray-600">刷新间隔:</span>
+                    <select id="refresh-interval-select" class="bg-gray-50 border border-gray-medium rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+                        <option value="10">10秒</option>
+                        <option value="30" selected>30秒</option>
+                        <option value="60">1分钟</option>
+                        <option value="300">5分钟</option>
+                        <option value="600">10分钟</option>
+                    </select>
+                </div> -->
+                <div class="hidden md:flex items-center space-x-2">
+                    <span class="text-sm text-gray-600 dark:text-dark-text-secondary">刷新间隔:</span>
+                    <div class="relative" id="refresh-interval-container">
+                        <!-- 选择器按钮 -->
+                        <button id="refresh-interval-btn" class="bg-gray-50 dark:bg-dark-border border border-gray-medium dark:border-dark-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 w-32 flex justify-between items-center text-dark dark:text-dark-text theme-transition">
+                            <span id="selected-interval">30秒</span>
+                            <i class="fa fa-chevron-down text-xs ml-2 transition-transform duration-300"></i>
+                        </button>
+                        
+                        <!-- 下拉菜单 -->
+                        <div id="interval-dropdown" class="absolute left-0 mt-1 w-full bg-white dark:bg-dark-surface border border-gray-medium dark:border-dark-border rounded-lg shadow-lg z-10 hidden theme-transition">
+                            <ul class="py-1 max-h-60 overflow-y-auto scrollbar-hide">
+                                <li><button class="interval-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border transition-colors text-dark dark:text-dark-text theme-transition" data-value="10">10秒</button></li>
+                                <li><button class="interval-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border transition-colors text-dark dark:text-dark-text theme-transition" data-value="30" data-selected="true">30秒</button></li>
+                                <li><button class="interval-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border transition-colors text-dark dark:text-dark-text theme-transition" data-value="60">1分钟</button></li>
+                                <li><button class="interval-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border transition-colors text-dark dark:text-dark-text theme-transition" data-value="300">5分钟</button></li>
+                                <li><button class="interval-option w-full text-left px-3 py-2 text-sm hover:bg-gray-light dark:hover:bg-dark-border transition-colors text-dark dark:text-dark-text theme-transition" data-value="600">10分钟</button></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="relative">
+                    <button id="refresh-btn" class="p-2 rounded-full bg-white dark:bg-dark-border shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 hover:text-primary transition-all duration-300 theme-transition">
+                        <i class="fa fa-refresh text-gray-600 dark:text-dark-text transition-colors"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="container mx-auto px-4 pt-20 pb-16">
+        <!-- 状态概览卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white dark:bg-dark-surface green:bg-green-surface rounded-xl shadow-sm p-6 transform hover:scale-[1.02] transition-transform theme-transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 dark:text-dark-text-secondary green:text-green-text-secondary text-sm">总端口数</p>
+                        <h3 class="text-3xl font-bold mt-1 text-dark dark:text-dark-text green:text-green-text" id="total-ports">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-primary/10 green:bg-green-primary/10 flex items-center justify-center">
+                        <i class="fa fa-plug text-primary green:text-green-primary text-xl"></i>
+                    </div>
+                </div>
+                <!-- 底部视觉平衡装饰条 -->
+                <div class="mt-auto pt-6">
+                    <div class="w-full h-1 bg-gradient-to-r from-primary/30 green:from-green-primary/30 to-primary/0 green:to-green-primary/0 rounded-full"></div>
+                </div>
+            </div>
+            
+            <div class="bg-white dark:bg-dark-surface green:bg-green-surface rounded-xl shadow-sm p-6 transform hover:scale-[1.02] transition-transform theme-transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 dark:text-dark-text-secondary green:text-green-text-secondary text-sm">活跃端口</p>
+                        <h3 class="text-3xl font-bold mt-1 text-dark dark:text-dark-text green:text-green-text" id="active-ports">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
+                        <i class="fa fa-check-circle text-success text-xl"></i>
+                    </div>
+                </div>
+                <!-- 底部视觉平衡装饰条 -->
+                <div class="mt-auto pt-6">
+                    <div class="w-full h-1 bg-gradient-to-r from-success/30 to-success/0 rounded-full"></div>
+                </div>
+            </div>
+            
+            <div class="bg-white dark:bg-dark-surface green:bg-green-surface rounded-xl shadow-sm p-6 transform hover:scale-[1.02] transition-transform theme-transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 dark:text-dark-text-secondary green:text-green-text-secondary text-sm">最近更新</p>
+                        <h3 class="text-3xl font-bold mt-1 text-dark dark:text-dark-text green:text-green-text" id="last-update">-</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
+                        <i class="fa fa-clock-o text-warning text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-gray-500 dark:text-dark-text-secondary green:text-green-text-secondary">
+                    <div class="flex items-center">
+                        <span>自动刷新间隔</span>
+                        <span class="ml-2 font-medium" id="refresh-interval">30秒</span>
+                        <!-- 倒计时装饰条 -->
+                        <div class="ml-10 flex-grow">
+                            <div class="w-full h-1 bg-gradient-to-r from-warning/30 to-warning/0 rounded-full">
+                                <div id="countdown-bar" class="h-full bg-warning rounded-full" style="width: 100%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="bg-white dark:bg-dark-surface green:bg-green-surface rounded-xl shadow-sm p-6 mb-8 theme-transition">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-semibold text-dark dark:text-dark-text green:text-green-text">端口使用分布</h2>
+                <div class="flex space-x-2">
+                    <button class="chart-filter-btn active px-3 py-1 text-sm rounded-full" data-filter="all">全部</button>
+                    <button class="chart-filter-btn px-3 py-1 text-sm rounded-full bg-gray-light text-gray-600 hover:bg-gray-200 transition-colors" data-filter="tcp">TCP</button>
+                    <button class="chart-filter-btn px-3 py-1 text-sm rounded-full bg-gray-light text-gray-600 hover:bg-gray-200 transition-colors" data-filter="udp">UDP</button>
+                </div>
+            </div>
+            <div class="h-64">
+                <canvas id="ports-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- 搜索和筛选区域 -->
+        <div class="bg-white dark:bg-dark-surface green:bg-green-surface rounded-xl shadow-sm p-6 mb-8 theme-transition">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h2 class="text-lg font-semibold text-dark dark:text-dark-text green:text-green-text">端口列表</h2>
+                <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                    <div class="relative flex-grow max-w-md">
+                        <i class="fa fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-dark-text-secondary green:text-green-text-secondary"></i>
+                        <input 
+                            type="text" 
+                            id="port-search" 
+                            placeholder="搜索端口号..." 
+                            class="w-full pl-10 pr-4 py-2 border border-gray-medium dark:border-dark-border green:border-green-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary green:focus:ring-green-primary/50 bg-white dark:bg-dark-border green:bg-green-surface text-dark dark:text-dark-text green:text-green-text placeholder-gray-400 dark:placeholder-dark-text-secondary green:placeholder-green-text-secondary theme-transition"
+                        >
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 端口列表表格 -->
+        <div class="bg-white dark:bg-dark-surface rounded-xl shadow-sm overflow-hidden theme-transition">
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-light dark:bg-dark-border">
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text cursor-pointer sortable" data-sort="port">
+                                端口号 <i class="fa fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text cursor-pointer sortable" data-sort="protocol">
+                                协议 <i class="fa fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text cursor-pointer sortable" data-sort="status">
+                                状态 <i class="fa fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text cursor-pointer sortable" data-sort="local_address">
+                                本地地址 <i class="fa fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text cursor-pointer sortable" data-sort="remote_address">
+                                远程地址 <i class="fa fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text cursor-pointer sortable" data-sort="pid">
+                                PID/程序名 <i class="fa fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-dark-text">
+                                操作
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="ports-table-body">
+                        <!-- 端口数据将通过JavaScript动态填充 -->
+                        <tr>
+                            <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                                <div class="flex flex-col items-center">
+                                    <i class="fa fa-circle-o-notch fa-spin text-primary text-2xl mb-3"></i>
+                                    <p>正在加载端口数据...</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- 分页控件 -->
+                <div class="px-6 py-4 border-t border-gray-light dark:border-dark-border flex flex-col sm:flex-row justify-between items-center theme-transition">
+                    <div class="text-sm text-gray-500 dark:text-dark-text-secondary mb-4 sm:mb-0">
+                        显示 <span id="shown-count">0</span> 条，共 <span id="total-count">0</span> 条
+                    </div>
+                    <div class="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-gray-500 dark:text-dark-text-secondary">每页显示：</span>
+                            <select id="page-size-select" class="px-2 py-1 border border-gray-medium dark:border-dark-border rounded text-gray-600 dark:text-dark-text-secondary bg-white dark:bg-dark-surface focus:outline-none focus:ring-2 focus:ring-primary/50 theme-transition">
+                                <option value="15" selected>15</option>
+                                <option value="30">30</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button id="first-page" class="px-3 py-1 rounded border border-gray-medium dark:border-dark-border text-gray-600 dark:text-dark-text-secondary hover:bg-gray-light dark:hover:bg-dark-border disabled:opacity-50 disabled:cursor-not-allowed theme-transition" disabled>
+                                <i class="fa fa-angle-double-left"></i>
+                            </button>
+                            <button id="prev-page" class="px-3 py-1 rounded border border-gray-medium dark:border-dark-border text-gray-600 dark:text-dark-text-secondary hover:bg-gray-light dark:hover:bg-dark-border disabled:opacity-50 disabled:cursor-not-allowed theme-transition" disabled>
+                                <i class="fa fa-chevron-left"></i>
+                            </button>
+                            <span id="page-info" class="px-3 py-1 text-gray-600 dark:text-dark-text-secondary">第 1 页，共 1 页</span>
+                            <button id="next-page" class="px-3 py-1 rounded border border-gray-medium dark:border-dark-border text-gray-600 dark:text-dark-text-secondary hover:bg-gray-light dark:hover:bg-dark-border disabled:opacity-50 disabled:cursor-not-allowed theme-transition" disabled>
+                                <i class="fa fa-chevron-right"></i>
+                            </button>
+                            <button id="last-page" class="px-3 py-1 rounded border border-gray-medium dark:border-dark-border text-gray-600 dark:text-dark-text-secondary hover:bg-gray-light dark:hover:bg-dark-border disabled:opacity-50 disabled:cursor-not-allowed theme-transition" disabled>
+                                <i class="fa fa-angle-double-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-white dark:bg-dark-surface border-t border-gray-light dark:border-dark-border py-6 theme-transition">
+        <div class="container mx-auto px-4 text-center text-sm text-gray-500 dark:text-dark-text-secondary">
+            <p>Linux服务器端口监控</p>
+        </div>
+    </footer>
+
+    <!-- 详情模态框 -->
+    <div id="detail-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-dark-surface rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-fade-in theme-transition">
+            <div class="px-6 py-4 border-b border-gray-light dark:border-dark-border flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-dark dark:text-dark-text" id="modal-title">端口详情</h3>
+                <button id="close-modal" class="text-gray-500 dark:text-dark-text-secondary hover:text-dark dark:hover:text-dark-text">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-4 overflow-y-auto flex-grow" id="modal-content">
+                <!-- 详情内容将通过JavaScript动态填充 -->
+            </div>
+            <div class="px-6 py-4 border-t border-gray-light dark:border-dark-border flex justify-end">
+                <button id="close-modal-btn" class="px-4 py-2 bg-gray-light dark:bg-dark-border text-gray-600 dark:text-dark-text rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 theme-transition">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let portsData = [];
+        let filteredData = [];
+        let totalCount = 0;
+        let totalPages = 1;
+        let currentPage = 1;
+        let pageSize = 15;
+        let sortField = 'port';
+        let sortDirection = 'asc';
+        let portsChart = null;
+
+
+        // 全局变量
+        let refreshInterval = 30; // 刷新间隔（秒）
+        let countdownInterval = null;
+        let autoRefreshTimer = null; // 自动刷新定时器
+        
+        // DOM元素加载完成后执行
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化主题
+            initTheme();
+            
+            // 初始化图表
+            initChart();
+            
+            // 加载端口数据
+            fetchPortsData();
+            
+            // 设置定时刷新
+            // setInterval(fetchPortsData, refreshInterval * 1000); // 每30秒刷新一次
+            
+            // 启动倒计时
+            startCountdown();
+            
+            // 事件监听
+            document.getElementById('refresh-btn').addEventListener('click', () => {
+                fetchPortsData();
+                startCountdown(); // 重置自动刷新时间间隔和进度条
+            });
+
+            // 主题切换事件
+            document.getElementById('theme-toggle').addEventListener('click', toggleThemeDropdown);
+            
+            // 主题选项事件
+            document.querySelectorAll('.theme-option').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const theme = this.dataset.theme;
+                    setTheme(theme);
+                    hideThemeDropdown();
+                });
+            });
+            
+            // 点击其他区域关闭主题下拉菜单
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#theme-toggle') && !e.target.closest('#theme-dropdown')) {
+                    hideThemeDropdown();
+                }
+            });
+
+            // 刷新间隔选择事件
+            // document.getElementById('refresh-interval-select').addEventListener('change', function() {
+            //     refreshInterval = parseInt(this.value);
+            //     document.getElementById('refresh-interval').textContent = `${refreshInterval}秒`;
+            //     startCountdown();
+            //     setAutoRefreshTimer();
+            // });
+            // 刷新间隔选择器逻辑
+            const intervalContainer = document.getElementById('refresh-interval-container');
+            const intervalBtn = document.getElementById('refresh-interval-btn');
+            const intervalDropdown = document.getElementById('interval-dropdown');
+            const intervalOptions = document.querySelectorAll('.interval-option');
+            const selectedIntervalText = document.getElementById('selected-interval');
+
+            // 切换下拉菜单显示/隐藏
+            intervalBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                intervalDropdown.classList.toggle('hidden');
+                intervalBtn.querySelector('i').classList.toggle('rotate-180');
+            });
+
+            // 点击其他区域关闭下拉菜单
+            document.addEventListener('click', (e) => {
+                if (!intervalContainer.contains(e.target)) {
+                    intervalDropdown.classList.add('hidden');
+                    intervalBtn.querySelector('i').classList.remove('rotate-180');
+                }
+            });
+
+            // 选择间隔选项
+            intervalOptions.forEach(option => {
+                // 设置初始选中状态
+                if (option.hasAttribute('data-selected')) {
+                    option.classList.add('bg-primary/10', 'text-primary');
+                }
+                
+                option.addEventListener('click', () => {
+                    // 更新选中值
+                    const value = option.getAttribute('data-value');
+                    refreshInterval = parseInt(value);
+                    
+                    // 更新显示文本
+                    selectedIntervalText.textContent = option.textContent;
+                    
+                    // 更新选中样式
+                    intervalOptions.forEach(opt => {
+                        opt.removeAttribute('data-selected');
+                        opt.classList.remove('bg-primary/10', 'text-primary');
+                    });
+                    option.setAttribute('data-selected', 'true');
+                    option.classList.add('bg-primary/10', 'text-primary');
+                    
+                    // 关闭下拉菜单
+                    intervalDropdown.classList.add('hidden');
+                    intervalBtn.querySelector('i').classList.remove('rotate-180');
+                    
+                    // 更新界面和定时器
+                    document.getElementById('refresh-interval').textContent = `${refreshInterval}秒`;
+                    startCountdown();
+                });
+            });
+
+            document.getElementById('port-search').addEventListener('input', debouncedSearchPorts);
+            document.getElementById('first-page').addEventListener('click', () => changePage(1));
+            document.getElementById('prev-page').addEventListener('click', () => changePage(currentPage - 1));
+            document.getElementById('next-page').addEventListener('click', () => changePage(currentPage + 1));
+            document.getElementById('last-page').addEventListener('click', () => changePage(totalPages));
+            document.getElementById('close-modal').addEventListener('click', closeModal);
+            document.getElementById('close-modal-btn').addEventListener('click', closeModal);
+            
+            // 每页显示数量选择
+            document.getElementById('page-size-select').addEventListener('change', function() {
+                // 设置新的每页显示数量
+                pageSize = parseInt(this.value);
+                // 重置到第一页
+                currentPage = 1;
+                // 重新获取数据
+                fetchPortsData();
+            });
+            
+            // 图表筛选按钮事件
+            document.querySelectorAll('.chart-filter-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // 移除所有按钮的激活状态
+                    document.querySelectorAll('.chart-filter-btn').forEach(b => {
+                        b.classList.remove('active');
+                    });
+                    // 设置当前按钮为激活状态
+                    this.classList.add('active');
+                    
+                    updateChart(this.dataset.filter);
+                });
+            });
+            
+            // 排序按钮事件
+            document.querySelectorAll('.sortable').forEach(header => {
+                header.addEventListener('click', function() {
+                    const field = this.dataset.sort;
+                    
+                    // 更新排序图标
+                    document.querySelectorAll('.sortable i').forEach(icon => {
+                        icon.className = 'fa fa-sort ml-1';
+                    });
+                    
+                    if (sortField === field) {
+                        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortField = field;
+                        sortDirection = 'asc';
+                    }
+                    
+                    // 设置当前排序图标
+                    const icon = this.querySelector('i');
+                    icon.className = `fa fa-sort-${sortDirection} ml-1`;
+                    
+                    // 重置到第一页
+                    currentPage = 1;
+                    // 从后端重新获取数据
+                    fetchPortsData();
+                });
+            });
+            
+            // 滚动时导航栏效果
+            window.addEventListener('scroll', () => {
+                const navbar = document.getElementById('navbar');
+                if (window.scrollY > 10) {
+                    navbar.classList.add('shadow');
+                } else {
+                    navbar.classList.remove('shadow');
+                }
+            });
+        });
+        
+        // 主题管理函数
+        function initTheme() {
+            // 从 localStorage 获取主题设置，默认为亮色主题
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            setTheme(savedTheme);
+        }
+        
+        function setTheme(theme) {
+            const html = document.documentElement;
+            const themeIcon = document.getElementById('theme-icon');
+            
+            // 移除所有主题类
+            html.classList.remove('dark', 'green');
+            
+            if (theme === 'dark') {
+                html.classList.add('dark');
+                themeIcon.className = 'fa fa-moon-o text-gray-600 dark:text-dark-text green:text-green-text transition-colors';
+                localStorage.setItem('theme', 'dark');
+            } else if (theme === 'green') {
+                html.classList.add('green');
+                themeIcon.className = 'fa fa-leaf text-gray-600 dark:text-dark-text green:text-green-text transition-colors';
+                localStorage.setItem('theme', 'green');
+            } else {
+                themeIcon.className = 'fa fa-sun-o text-gray-600 dark:text-dark-text green:text-green-text transition-colors';
+                localStorage.setItem('theme', 'light');
+            }
+            
+            // 更新图表主题
+            updateChartTheme(theme);
+        }
+        
+        function toggleThemeDropdown() {
+            const dropdown = document.getElementById('theme-dropdown');
+            dropdown.classList.toggle('hidden');
+        }
+        
+        function hideThemeDropdown() {
+            const dropdown = document.getElementById('theme-dropdown');
+            dropdown.classList.add('hidden');
+        }
+        
+        function toggleTheme() {
+            const html = document.documentElement;
+            let currentTheme = 'light';
+            if (html.classList.contains('dark')) {
+                currentTheme = 'dark';
+            } else if (html.classList.contains('green')) {
+                currentTheme = 'green';
+            }
+            
+            // 循环切换： light -> dark -> green -> light
+            const nextTheme = currentTheme === 'light' ? 'dark' : 
+                            currentTheme === 'dark' ? 'green' : 'light';
+            setTheme(nextTheme);
+        }
+        
+        function updateChartTheme(theme) {
+            if (!portsChart) return;
+            
+            let textColor, gridColor;
+            
+            if (theme === 'dark') {
+                textColor = '#C9CDD4';
+                gridColor = '#2F3349';
+            } else if (theme === 'green') {
+                textColor = '#2d5a2d';
+                gridColor = '#c3e6c3';
+            } else {
+                textColor = '#1D2129';
+                gridColor = '#E5E6EB';
+            }
+            
+            // 更新图表配置
+            portsChart.options.scales.x.ticks = {
+                color: textColor
+            };
+            portsChart.options.scales.x.grid = {
+                color: gridColor
+            };
+            portsChart.options.scales.y.ticks = {
+                color: textColor
+            };
+            portsChart.options.scales.y.grid = {
+                color: gridColor
+            };
+            portsChart.options.plugins.legend.labels = {
+                color: textColor
+            };
+            
+            portsChart.update('none'); // 无动画更新
+        }
+        
+        // 初始化图表
+        function initChart() {
+            const ctx = document.getElementById('ports-chart').getContext('2d');
+            portsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['0-1023', '1024-49151', '49152-65535'],
+                    datasets: [
+                        {
+                            label: 'TCP',
+                            data: [0, 0, 0],
+                            backgroundColor: 'rgba(22, 93, 255, 0.7)',
+                            borderColor: 'rgba(22, 93, 255, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'UDP',
+                            data: [0, 0, 0],
+                            backgroundColor: 'rgba(0, 180, 42, 0.7)',
+                            borderColor: 'rgba(0, 180, 42, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '端口数量'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '端口范围'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw} 个端口`;
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1000
+                    }
+                }
+            });
+        }
+
+        // 更新图表数据
+        function updateChart(filter = 'all') {
+            // 端口范围划分
+            const ranges = [
+                { name: '0-1023', min: 0, max: 1023 },
+                { name: '1024-49151', min: 1024, max: 49151 },
+                { name: '49152-65535', min: 49152, max: 65535 }
+            ];
+            
+            // 初始化数据
+            const tcpData = [0, 0, 0];
+            const udpData = [0, 0, 0];
+            
+            // 筛选数据
+            let chartData = [...filteredData];
+            if (filter !== 'all') {
+                chartData = chartData.filter(port => port.protocol.toLowerCase() === filter);
+            }
+            
+            // 统计各范围端口数量
+            chartData.forEach(port => {
+                const portNum = parseInt(port.port);
+                
+                for (let i = 0; i < ranges.length; i++) {
+                    if (portNum >= ranges[i].min && portNum <= ranges[i].max) {
+                        if (port.protocol.toLowerCase() === 'tcp') {
+                            tcpData[i]++;
+                        } else if (port.protocol.toLowerCase() === 'udp') {
+                            udpData[i]++;
+                        }
+                        break;
+                    }
+                }
+            });
+            
+            // 更新图表
+            portsChart.data.datasets[0].data = tcpData;
+            portsChart.data.datasets[1].data = udpData;
+            
+            // 如果筛选为TCP或UDP，隐藏不需要的数据集
+            if (filter === 'tcp') {
+                portsChart.data.datasets[1].hidden = true;
+                portsChart.data.datasets[0].hidden = false;
+            } else if (filter === 'udp') {
+                portsChart.data.datasets[0].hidden = true;
+                portsChart.data.datasets[1].hidden = false;
+            } else {
+                portsChart.data.datasets[0].hidden = false;
+                portsChart.data.datasets[1].hidden = false;
+            }
+            
+            portsChart.update();
+        }
+
+        // 启动倒计时
+        function startCountdown() {
+            let seconds = refreshInterval;
+            updateCountdownBar(seconds);
+            
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+            
+            countdownInterval = setInterval(() => {
+                seconds--;
+                updateCountdownBar(seconds);
+                
+                if (seconds <= 0) {
+                    // 倒计时到0秒时请求数据
+                    fetchPortsData();
+                    seconds = refreshInterval;
+                }
+            }, 1000);
+        }
+        
+        // 更新倒计时进度条
+        function updateCountdownBar(seconds) {
+            const progress = (seconds / refreshInterval) * 100;
+            const countdownBar = document.getElementById('countdown-bar');
+            if (countdownBar) {
+                countdownBar.style.width = `${progress}%`;
+            }
+            
+            const refreshIntervalElement = document.getElementById('refresh-interval');
+            if (refreshIntervalElement) {
+                refreshIntervalElement.textContent = `${seconds}秒`;
+            }
+        }
+        
+        // 显示表格加载动画
+        function showTableLoading() {
+            const tableBody = document.getElementById('ports-table-body');
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                        <div class="flex flex-col items-center">
+                            <i class="fa fa-circle-o-notch fa-spin text-primary text-2xl mb-3"></i>
+                            <p>正在加载端口数据...</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // 存储搜索关键词的变量（只有通过防抖函数才会更新）
+        let debouncedSearchTerm = '';
+        
+        // 从后端获取端口数据
+        async function fetchPortsData() {
+            try {
+                // 显示刷新按钮动画
+                const refreshBtn = document.getElementById('refresh-btn');
+                refreshBtn.querySelector('i').classList.add('fa-spin');
+                
+                // 显示表格加载动画
+                showTableLoading();
+
+                // 构建查询参数
+                const params = new URLSearchParams();
+                params.append('page', currentPage);
+                params.append('page_size', pageSize);
+                params.append('sort_field', sortField);
+                params.append('sort_direction', sortDirection);
+                if (debouncedSearchTerm) {
+                    params.append('search', debouncedSearchTerm);
+                }
+
+                // 获取端口数据
+                const response = await fetch(`/api/ports?${params.toString()}`);
+                if (!response.ok) {
+                    throw new Error('获取端口数据失败');
+                }
+
+                const result = await response.json();
+                portsData = result.data || [];
+                totalCount = result.total || 0;
+                totalPages = result.total_pages || 1;
+                currentPage = result.page || 1;
+
+                // 更新最后更新时间
+                const now = new Date();
+                document.getElementById('last-update').textContent = now.toLocaleString();
+
+                // 更新统计数字
+                document.getElementById('total-ports').textContent = totalCount;
+
+                // 使用当前获取的端口数据来计算活跃端口数量
+                const activePorts = portsData.filter(port => 
+                    port.status === 'LISTEN' || port.status === 'ESTABLISHED'
+                ).length;
+
+                document.getElementById('active-ports').textContent = activePorts;
+
+                // 渲染端口列表（不需要前端筛选，因为后端已经处理）
+                renderPagedData();
+
+                // 更新图表
+                filteredData = portsData;
+                const activeFilter = document.querySelector('.chart-filter-btn.active').dataset.filter;
+                updateChart(activeFilter);
+
+            } catch (error) {
+                console.error('获取端口数据时出错:', error);
+                showError('获取端口数据失败，请稍后重试');
+                // 显示错误状态
+                const tableBody = document.getElementById('ports-table-body');
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                            <div class="flex flex-col items-center">
+                                <i class="fa fa-exclamation-circle text-danger text-2xl mb-3"></i>
+                                <p>加载数据失败，请点击刷新按钮重试</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                // 隐藏刷新按钮动画
+                const refreshBtn = document.getElementById('refresh-btn');
+                refreshBtn.querySelector('i').classList.remove('fa-spin');
+            }
+        }
+
+        // 防抖函数 - 优化版
+        function debounce(func, delay) {
+            let timeoutId;
+            return function() {
+                const context = this;
+                const args = arguments;
+                // 清除之前的定时器
+                clearTimeout(timeoutId);
+                // 设置新的定时器
+                timeoutId = setTimeout(() => {
+                    // 只有在定时器触发时才执行函数
+                    func.apply(context, args);
+                }, delay);
+            };
+        }
+
+        // 搜索端口
+        function searchPorts() {
+            // 这个函数只在防抖定时器触发时被调用
+            console.log('搜索防抖触发');
+            // 更新搜索关键词变量
+            debouncedSearchTerm = document.getElementById('port-search').value.toLowerCase();
+            // 重置到第一页
+            currentPage = 1;
+            // 从后端重新获取数据
+            fetchPortsData();
+        }
+
+        // 创建防抖版本的搜索函数，设置500毫秒延迟（增加延迟时间以确保效果）
+        const debouncedSearchPorts = debounce(searchPorts, 500);
+
+        // 渲染分页数据
+        function renderPagedData() {
+            const tableBody = document.getElementById('ports-table-body');
+            const currentData = portsData;
+            
+            // 更新计数显示
+            document.getElementById('shown-count').textContent = currentData.length;
+            document.getElementById('total-count').textContent = totalCount;
+            document.getElementById('page-info').textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
+            
+            // 更新分页按钮状态
+            document.getElementById('first-page').disabled = currentPage === 1;
+            document.getElementById('prev-page').disabled = currentPage === 1;
+            document.getElementById('next-page').disabled = currentPage === totalPages;
+            document.getElementById('last-page').disabled = currentPage === totalPages;
+            
+            // 清空表格
+            tableBody.innerHTML = '';
+            
+            // 如果没有数据
+            if (currentData.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                            <div class="flex flex-col items-center">
+                                <i class="fa fa-search text-gray-300 text-2xl mb-3"></i>
+                                <p>没有找到匹配的端口数据</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // 填充表格数据
+            currentData.forEach(port => {
+                const row = document.createElement('tr');
+                row.className = 'border-t border-gray-light dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-border transition-colors theme-transition';
+                row.dataset.pid = port.pid;
+                row.dataset.port = port.port;
+                
+                // 状态标签样式
+                let statusClass = '';
+                let statusText = port.status;
+                
+                switch (statusText) {
+                    case 'LISTEN':
+                        statusClass = 'bg-success/10 text-success';
+                        break;
+                    case 'ESTABLISHED':
+                        statusClass = 'bg-primary/10 text-primary';
+                        break;
+                    case 'TIME_WAIT':
+                        statusClass = 'bg-warning/10 text-warning';
+                        break;
+                    case 'CLOSED':
+                        statusClass = 'bg-gray-light dark:bg-dark-border text-gray-600 dark:text-dark-text-secondary';
+                        break;
+                    default:
+                        statusClass = 'bg-gray-light dark:bg-dark-border text-gray-600 dark:text-dark-text-secondary';
+                }
+                
+                // 协议标签样式
+                const protocolClass = port.protocol === 'TCP' 
+                    ? 'bg-primary/10 text-primary' 
+                    : 'bg-success/10 text-success';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4">
+                        <div class="font-medium text-dark dark:text-dark-text">${port.port}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="px-2 py-1 rounded-full text-xs ${protocolClass}">${port.protocol}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="px-2 py-1 rounded-full text-xs ${statusClass}">${statusText}</span>
+                    </td>
+                    <td class="px-6 py-4 text-gray-600 dark:text-dark-text-secondary">${port.local_address}</td>
+                    <td class="px-6 py-4 text-gray-600 dark:text-dark-text-secondary">${port.remote_address || '-'}</td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center">
+                            ${port.pid ? `<span class="text-sm bg-gray-light dark:bg-dark-border px-2 py-1 rounded mr-2 text-dark dark:text-dark-text">${port.pid}</span>` : ''}
+                            <span class="text-sm truncate max-w-xs text-dark dark:text-dark-text">${port.process || '-'}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <button class="view-details text-primary hover:text-primary/80" data-pid="${port.pid}" data-port="${port.port}">
+                            <i class="fa fa-eye mr-1"></i> 详情
+                        </button>
+                    </td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            // 为详情按钮添加事件监听
+            document.querySelectorAll('.view-details').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const pid = this.dataset.pid;
+                    const port = this.dataset.port;
+                    showPortDetails(pid, port);
+                });
+            });
+        }
+
+        // 改变页码
+        function changePage(page) {
+            if (page < 1 || page > totalPages) {
+                return;
+            }
+            
+            currentPage = page;
+            // 从后端重新获取数据
+            fetchPortsData();
+            
+            // 滚动到表格顶部
+            document.querySelector('table').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // 显示端口详情
+        function showPortDetails(pid, portNumber) {
+            // 查找端口数据 - 改进查找逻辑，当pid为空时只使用portNumber进行匹配
+            const port = portsData.find(p => {
+                // 如果pid存在且不为空，则使用pid和portNumber双重匹配
+                if (pid && pid !== '-' && pid !== 'null' && pid !== 'undefined') {
+                    return p.pid === pid && p.port === portNumber;
+                }
+                // 否则只使用portNumber匹配
+                return p.port === portNumber;
+            });
+            
+            if (!port) {
+                showError('未找到端口详情');
+                return;
+            }
+            
+            // 更新模态框标题
+            document.getElementById('modal-title').textContent = `端口 ${port.port} 详情`;
+            
+            // 准备详情内容
+            let detailsHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-500 mb-3">基本信息</h4>
+                        <ul class="space-y-3">
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">端口号:</span>
+                                <span class="font-medium">${port.port}</span>
+                            </li>
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">协议:</span>
+                                <span class="font-medium">${port.protocol}</span>
+                            </li>
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">状态:</span>
+                                <span class="font-medium">${port.status}</span>
+                            </li>
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">本地地址:</span>
+                                <span>${port.local_address}</span>
+                            </li>
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">远程地址:</span>
+                                <span>${port.remote_address || '-'}</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-500 mb-3">进程信息</h4>
+                        <ul class="space-y-3">
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">PID:</span>
+                                <span class="font-medium">${port.pid || '-'}</span>
+                            </li>
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">程序名:</span>
+                                <span>${port.process || '-'}</span>
+                            </li>
+                            <li class="flex">
+                                <span class="w-24 text-gray-500">用户:</span>
+                                <span>${port.user || '-'}</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+            
+            // 更新模态框内容
+            document.getElementById('modal-content').innerHTML = detailsHtml;
+            
+            // 显示模态框
+            document.getElementById('detail-modal').classList.remove('hidden');
+            document.getElementById('detail-modal').classList.add('flex');
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+            document.getElementById('detail-modal').classList.remove('flex');
+        }
+
+        // 显示成功消息
+        function showSuccess(message) {
+            // 移除所有已存在的通知（成功和错误）
+            removeAllNotifications();
+            
+            // 创建新的通知元素
+            const notification = document.createElement('div');
+            notification.className = 'success-notification fixed top-20 right-4 bg-success text-white px-4 py-3 rounded-lg shadow-lg z-50 transform translate-x-full opacity-0 transition-all duration-500 flex items-center';
+            notification.innerHTML = `
+                <i class="fa fa-check-circle mr-2"></i>
+                <span>${message}</span>
+            `;
+            
+            // 添加到页面
+            document.body.appendChild(notification);
+            
+            // 显示通知（添加淡入效果）
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+                notification.classList.remove('opacity-0');
+            }, 100);
+            
+            // 设置3秒后隐藏
+            notification.timeout = setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                notification.classList.add('opacity-0');
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 500); // 等待淡出动画完成
+            }, 3000);
+        }
+
+        // 显示错误消息
+        function showError(message) {
+            // 移除所有已存在的通知（成功和错误）
+            removeAllNotifications();
+            
+            // 创建新的通知元素
+            const notification = document.createElement('div');
+            notification.className = 'error-notification fixed top-20 right-4 bg-danger text-white px-4 py-3 rounded-lg shadow-lg z-50 transform translate-x-full opacity-0 transition-all duration-500 flex items-center';
+            notification.innerHTML = `
+                <i class="fa fa-exclamation-circle mr-2"></i>
+                <span>${message}</span>
+            `;
+            
+            // 添加到页面
+            document.body.appendChild(notification);
+            
+            // 显示通知（添加淡入效果）
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+                notification.classList.remove('opacity-0');
+            }, 100);
+            
+            // 设置5秒后隐藏
+            notification.timeout = setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                notification.classList.add('opacity-0');
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 500); // 等待淡出动画完成
+            }, 5000);
+        }
+        
+        // 移除所有通知
+        function removeAllNotifications() {
+            const notifications = document.querySelectorAll('.success-notification, .error-notification');
+            notifications.forEach(notification => {
+                clearTimeout(notification.timeout);
+                notification.classList.add('translate-x-full');
+                notification.classList.add('opacity-0');
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 500);
+            });
+        }
+    </script>
+</body>
+</html>
